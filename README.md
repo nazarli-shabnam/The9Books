@@ -1,65 +1,95 @@
-﻿# Overview
-#### An API to retrieve hadith of nine famous books:
+# The 9 Books API
 
-|  Book 	|  Hadith count 	|
-|---	|---	|
-|   	 Sahih Bukhari|  7008 	|
-|   Sahih Muslim	| 5362  	|
-|   Sunan Nasai	|   5662	|
-|   Sunan Abi Dawud	|   4590	|
-|   	Sunan Tirmidhi|   3891	|
-|   	Sunan Ibn Majah|  4332 	|
-|   	Muwatta Imam Malik|  1594 	|
-|    Sunan Darimi	|   3367	|
-|   	Musnad Ahmad|   26363	|
+An API to retrieve hadith from nine famous Islamic books.
 
+## Overview
 
-# Development Setup
+| Book               | Hadith count |
+| ------------------ | ------------ |
+| Sahih Bukhari      | 7008         |
+| Sahih Muslim       | 5362         |
+| Sunan Nasai        | 5662         |
+| Sunan Abi Dawud    | 4590         |
+| Sunan Tirmidhi     | 3891         |
+| Sunan Ibn Majah    | 4332         |
+| Muwatta Imam Malik | 1594         |
+| Sunan Darimi       | 3367         |
+| Musnad Ahmad       | 26363        |
 
-* Api was built using Visual Studio Community 2019 Version 16.4.0, .net core 3.1, SQLite.
-* Download [SQLite & SQL Server Compact Toolbox extension](https://marketplace.visualstudio.com/items?itemName=ErikEJ.SQLServerCompactSQLiteToolbox) to access SQLite database from visual studio.
+## Getting Started
 
-## Starting the Development Server
+**For detailed setup instructions, please see [DOCKER_SETUP.md](DOCKER_SETUP.md)**
 
-Open up Terminal and navigate to the directory where you want the project to live.
+The project uses Docker for easy deployment. The Dockerfile automatically handles database extraction from the compressed `SunnahDb.rar` file.
 
-Clone this repository:
+### Quick Start
 
-```
-git clone https://github.com/MohamedAbdelghani/The9Books.git
-```
+1. Clone the repository
+2. Navigate to `src/Api` directory
+3. Build and run with Docker (see [DOCKER_SETUP.md](DOCKER_SETUP.md) for details)
 
-Extract database file from "src/Api/SunnahDb.rar" in the same directory, it was compressed because it exceeded github file size limit. <br/>
-<b>The original Hadith CSV files can be found in [Open-Hadith-Data](https://github.com/mhashim6/Open-Hadith-Data) repository.</b> 
- 
-Navigate to  api project:
+## Technical Details
 
-```
-cd The9Books/src/Api
-```
+- Built with .NET Core 3.1
+- Uses SQLite database
+- Database file is compressed as `SunnahDb.rar` (exceeds GitHub file size limit)
+- The original Hadith CSV files can be found in [Open-Hadith-Data](https://github.com/mhashim6/Open-Hadith-Data) repository
 
-Ensure that Docker Desktop is up and running, then run the following commands:
-```
-  docker build -t 9books/dev . 
-  docker run   -p 5000:80 --name 9hadithbooks 9books/dev
- ```
-Wait for the logs to show "server started on port 5000", then navigate to localhost:5000 to access api.
+## API Endpoints
 
-# Routes
 ### `GET /books`
-Retrieves list of all books
+
+Retrieves list of all books with their metadata.
 
 ### `GET /{bookId}/{hadithNumber}`
-Retrieves specific hadith from specific book.<br/>
-<b>book ids can be obtained from end point `GET /books`</b>
+
+Retrieves a specific hadith from a specific book.
+
+**Parameters:**
+
+- `bookId`: Book identifier (e.g., "bukhari", "muslim")
+- `hadithNumber`: Hadith number (1-based)
+
+**Example:** `GET /bukhari/1`
 
 ### `GET /{bookId}/{startHadithNumber}/{rangeSize}`
-Retrieves a range of hadiths from speific book starting from specific hadith.<br/>
-Maximum range size is 50.
+
+Retrieves a paginated range of hadiths from a specific book.
+
+**Parameters:**
+
+- `bookId`: Book identifier
+- `startHadithNumber`: Starting hadith number (1-based)
+- `rangeSize`: Number of hadiths to retrieve (max 50, configurable)
+
+**Response includes pagination metadata:**
+
+- `data`: Array of hadiths
+- `totalCount`: Total number of hadiths in the book
+- `start`: Starting position
+- `size`: Number of items returned
+- `hasMore`: Whether more results are available
+
+**Example:** `GET /bukhari/1/10`
 
 ### `GET /random`
-Retrieves a random hadith from Sahih al-Bukhari.
+
+Retrieves a random hadith from Sahih al-Bukhari (default).
 
 ### `GET /random/{bookId}`
-Retrieves a random hadith from specific book.
 
+Retrieves a random hadith from a specific book.
+
+**Example:** `GET /random/muslim`
+
+## API Documentation
+
+Once the API is running, you can access:
+
+- **Swagger UI**: `http://localhost:5000/swagger`
+- **Health Check**: `http://localhost:5000/health`
+
+## Additional Resources
+
+- [Docker Setup Guide](DOCKER_SETUP.md) - Detailed instructions for running with Docker
+- [Open-Hadith-Data](https://github.com/mhashim6/Open-Hadith-Data) - Original Hadith CSV files repository
