@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Threading;
 
 namespace The9Books
 {
@@ -9,11 +10,14 @@ namespace The9Books
 
     public class RandomGenerator : IRandom
     {
-        private readonly Random _random = new Random();
+        private static readonly ThreadLocal<Random> _random = new ThreadLocal<Random>(() => 
+            new Random(Interlocked.Increment(ref _seedCounter)));
+
+        private static int _seedCounter = Environment.TickCount;
 
         public int RandPositive(int max = int.MaxValue)
         {
-            return _random.Next(1, max);
+            return _random.Value.Next(1, max + 1);
         }
     }
 }

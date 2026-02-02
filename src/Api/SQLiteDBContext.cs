@@ -12,7 +12,36 @@ namespace The9Books
     {
         public DbSet<Hadith> Hadiths { get; set; }
 
-        protected override void OnConfiguring(DbContextOptionsBuilder options)
-            => options.UseSqlite("Data Source=SunnahDb.db");
+        public SQLiteDBContext(DbContextOptions<SQLiteDBContext> options) : base(options)
+        {
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Hadith>()
+                .HasIndex(h => new { h.Book, h.Number })
+                .IsUnique();
+
+            modelBuilder.Entity<Hadith>()
+                .HasIndex(h => h.Book);
+
+            modelBuilder.Entity<Hadith>()
+                .HasIndex(h => h.Number);
+
+            modelBuilder.Entity<Hadith>()
+                .Property(h => h.HadithText)
+                .IsRequired(false);
+
+            modelBuilder.Entity<Hadith>()
+                .Property(h => h.Tafseel)
+                .IsRequired(false);
+
+            modelBuilder.Entity<Hadith>()
+                .Property(h => h.Book)
+                .IsRequired(false)
+                .HasMaxLength(50);
+        }
     }
 }

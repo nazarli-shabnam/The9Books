@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using The9Books.Models;
 
 namespace The9Books.Controllers
@@ -15,6 +18,8 @@ namespace The9Books.Controllers
     {
         private readonly IDBContext _dbContext;
         private readonly IRandom _random;
+        private readonly ILogger<HadithController> _logger;
+        private readonly ApiSettings _apiSettings;
         private static readonly Book[] _books;
 
         static HadithController()
@@ -33,50 +38,102 @@ namespace The9Books.Controllers
             };
         }
 
-        public HadithController(IDBContext dbContext, IRandom random)
+        public HadithController(IDBContext dbContext, IRandom random, ILogger<HadithController> logger, IOptions<ApiSettings> apiSettings)
         {
             _dbContext = dbContext;
             _random = random;
+            _logger = logger;
+            _apiSettings = apiSettings.Value;
         }
 
         [Route("books")]
-        public async Task<ActionResult> Books() => Ok(_books);
+        [HttpGet]
+        [ResponseCache(Duration = 3600)] // Cache for 1 hour
+        public ActionResult Books()
+        {
+            _logger.LogInformation("Retrieving list of all books");
+            return Ok(_books);
+        }
 
         [Route("{bookId}/{num}")]
+        [HttpGet]
         [ProducesResponseType(typeof(HadithDto), StatusCodes.Status200OK)]
-        public async Task<ActionResult<HadithDto>> Get(string bookId, int num)
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<HadithDto>> Get(
+            [Required] string bookId, 
+            [Range(1, int.MaxValue, ErrorMessage = "Hadith number must be greater than 0")] int num)
         {
-            if (string.IsNullOrEmpty(bookId) || num <= 0) return BadRequest();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             var book = _books.FirstOrDefault(x => x.Id.Equals(bookId.Trim(), StringComparison.OrdinalIgnoreCase));
 
-            if (book == null) return NotFound("Invalid bookId");
-            if (num > book.HadithCount) return NotFound();
+            if (book == null)
+            {
+                _logger.LogWarning("Book not found: {BookId}", bookId);
+                return NotFound(new { error = "Invalid bookId" });
+            }
+            
+            if (num > book.HadithCount)
+            {
+                _logger.LogWarning("Hadith number {Num} exceeds maximum {Max} for book {BookId}", num, book.HadithCount, bookId);
+                return NotFound(new { error = $"Hadith number exceeds maximum of {book.HadithCount}" });
+            }
 
+            _logger.LogInformation("Retrieving hadith {Num} from book {BookId}", num, bookId);
             var hadith = await _dbContext
                 .Hadiths
                 .FirstOrDefaultAsync(x => x.Book == book.Id && x.Number == num);
 
-            if (hadith == null) return NotFound();
+            if (hadith == null)
+            {
+                _logger.LogWarning("Hadith {Num} not found in book {BookId}", num, bookId);
+                return NotFound(new { error = "Hadith not found" });
+            }
 
             return Ok(new HadithDto(hadith));
         }
 
         [Route("{bookId}/{start}/{size}")]
-        [ProducesResponseType(typeof(IEnumerable<HadithDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<IEnumerable<HadithDto>>> List(string bookId, int start, int size)
+        [HttpGet]
+        [ProducesResponseType(typeof(PagedResult<HadithDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<PagedResult<HadithDto>>> List(
+            [Required] string bookId, 
+            [Range(1, int.MaxValue, ErrorMessage = "Start must be greater than 0")] int start, 
+            [Range(1, int.MaxValue, ErrorMessage = "Size must be greater than 0")] int size)
         {
-            if (string.IsNullOrEmpty(bookId)) return BadRequest();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             var book = _books.FirstOrDefault(x => x.Id.Equals(bookId.Trim(), StringComparison.OrdinalIgnoreCase));
 
-            if (book == null) return NotFound("Invalid bookId");
-            if (start > book.HadithCount) return NotFound();
+            if (book == null)
+            {
+                _logger.LogWarning("Book not found: {BookId}", bookId);
+                return NotFound(new { error = "Invalid bookId" });
+            }
+            
+            if (start > book.HadithCount)
+            {
+                _logger.LogWarning("Start position {Start} exceeds maximum {Max} for book {BookId}", start, book.HadithCount, bookId);
+                return NotFound(new { error = $"Start position exceeds maximum hadith count of {book.HadithCount}" });
+            }
 
-            var maxSize = 50;
-
+            var maxSize = _apiSettings.MaxPageSize;
             start = start <= 0 ? 1 : start;
             size = (size <= 0 || size > maxSize) ? maxSize : size;
+
+            _logger.LogInformation("Retrieving {Size} hadiths starting from {Start} in book {BookId}", size, start, bookId);
+            
+            var totalCount = await _dbContext.Hadiths
+                .CountAsync(x => x.Book == book.Id);
 
             var hadiths = await _dbContext.Hadiths
                 .Where(x => x.Book == book.Id)
@@ -85,22 +142,45 @@ namespace The9Books.Controllers
                 .Take(size)
                 .ToListAsync();
 
-            return Ok(hadiths.Select(x => new HadithDto(x)));
+            var result = new PagedResult<HadithDto>
+            {
+                Data = hadiths.Select(x => new HadithDto(x)),
+                TotalCount = totalCount,
+                Start = start,
+                Size = hadiths.Count,
+                HasMore = (start + hadiths.Count - 1) < totalCount
+            };
+
+            return Ok(result);
         }
 
         [Route("random/{bookId?}")]
+        [HttpGet]
         [ProducesResponseType(typeof(HadithDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<HadithDto>> Random(string bookId = "bukhari")
         {
+            if (string.IsNullOrEmpty(bookId)) bookId = "bukhari";
             var book = _books.FirstOrDefault(x => x.Id.Equals(bookId.Trim(), StringComparison.OrdinalIgnoreCase));
 
-            if (book == null) return NotFound("Invalid bookId");
+            if (book == null)
+            {
+                _logger.LogWarning("Book not found for random hadith: {BookId}", bookId);
+                return NotFound(new { error = "Invalid bookId" });
+            }
 
             var hadithNumber = _random.RandPositive(book.HadithCount);
+            _logger.LogInformation("Retrieving random hadith {Num} from book {BookId}", hadithNumber, bookId);
 
             var hadith = await _dbContext
                 .Hadiths
                 .FirstOrDefaultAsync(x => x.Book == book.Id && x.Number == hadithNumber);
+
+            if (hadith == null)
+            {
+                _logger.LogWarning("Random hadith {Num} not found in book {BookId}", hadithNumber, bookId);
+                return NotFound(new { error = "Hadith not found" });
+            }
 
             return Ok(new HadithDto(hadith));
         }
