@@ -67,12 +67,13 @@ namespace The9Books
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            app.UseMiddleware<Middleware.ErrorHandlingMiddleware>();
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
+                app.UseHttpsRedirection();
             }
-
-            app.UseHttpsRedirection();
 
             app.UseRouting();
 
@@ -80,10 +81,6 @@ namespace The9Books
 
             app.UseAuthorization();
 
-            // Add error handling middleware after routing but before endpoints
-            app.UseMiddleware<Middleware.ErrorHandlingMiddleware>();
-
-            // Enable Swagger UI at /swagger route
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
